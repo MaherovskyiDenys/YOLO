@@ -1,0 +1,16 @@
+import torch
+from torchvision.transforms import v2
+
+from configs.config import IMG_SIZE
+
+train_transform = v2.Compose([
+    v2.ToImage(),
+    v2.Resize(IMG_SIZE),
+    v2.ToDtype(torch.float32, scale=True),
+])
+
+val_transform = v2.Compose([
+    v2.ToImage(),
+    v2.Resize(IMG_SIZE),
+    v2.ToDtype(torch.float32, scale=True),
+])
