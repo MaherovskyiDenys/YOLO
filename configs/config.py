@@ -21,7 +21,7 @@ CLASSES = [
     "tvmonitor",
 ]
 
-IMG_SIZE = (448, 448)
+IMG_SIZE = (448, 448)  # (h, w)
 
 S = 7
 B = 2
