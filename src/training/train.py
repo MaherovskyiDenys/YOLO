@@ -1,16 +1,14 @@
 import torch
 from torch import nn
 from torch import optim
-
-# Data
-from src.dataset.dataloader import get_loaders
 from torch.utils.data import DataLoader
 
+from configs.training import EPOCHS
+# Data
+from src.dataset.dataloader import get_loaders
 from src.models.model import YOLORes
 from src.training.loss import YOLOLoss
-
-from configs.training import EPOCHS, LR, WEIGHT_DECAY
-
+from src.training.optimizer import build_optimizer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -59,8 +57,8 @@ def train():
     dataset_train, dataset_val = get_loaders()
 
     loss_func = YOLOLoss()
-    optimizer = optim.AdamW(model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
-
+    optimizer = build_optimizer(model)
+    
     for epoch in range(EPOCHS):
         train_output = run_epoch(model, dataset_train, loss_func, optimizer)
         val_output = run_epoch(model, dataset_val, loss_func)
