@@ -1,8 +1,9 @@
 import torch
 from torch import nn
+import torch.nn.functional as f
 from configs.config import S, B, C, LAMBDA_COORD, LAMBDA_NOOBJ
 
-from torchvision.ops import box_convert, complete_box_iou_loss
+from torchvision.ops import box_convert, complete_box_iou_loss, box_iou
 
 
 class YOLOLoss(nn.Module):
@@ -15,7 +16,6 @@ class YOLOLoss(nn.Module):
         self.lambda_coord = LAMBDA_COORD
         self.lambda_noobj = LAMBDA_NOOBJ
 
-        self.mse = nn.MSELoss()
         self.bce = nn.BCEWithLogitsLoss()
 
     def forward(self, predicted, target):
@@ -29,10 +29,11 @@ class YOLOLoss(nn.Module):
         Return:
             loss
 
-        :param predicted:
+        :param predicted: Raw logits
         :param target:
         :return:
         """
+        predicted = self._activate(predicted)
         b_idx, gy, gx = target[:, :, :, 4].nonzero(as_tuple=True)
 
         # Cell Selection
@@ -65,13 +66,15 @@ class YOLOLoss(nn.Module):
         ciou_loss = torch.where(responsible_box_mask, ciou_1, ciou_2).mean()
 
         # 2. Object Confidence Loss
-        target_iou = torch.where(responsible_box_mask, 1 - ciou_1, 1 - ciou_2).detach()
+        iou_1 = box_iou(true_bboxes_xyxy, bboxes_1_predicted_xyxy, fmt="xyxy").diag()
+        iou_2 = box_iou(true_bboxes_xyxy, bboxes_2_predicted_xyxy, fmt="xyxy").diag()
+
+        target_iou = torch.where(responsible_box_mask, iou_1, iou_2).detach()
         confidence_predicted_1 = responsible_cells_predicted[:, 4]
         confidence_predicted_2 = responsible_cells_predicted[:, 9]
 
         responsible_confidence_predicted = torch.where(responsible_box_mask, confidence_predicted_1, confidence_predicted_2)
-        object_confidence_loss = self.mse(responsible_confidence_predicted, target_iou)
-
+        object_confidence_loss = self.bce(responsible_confidence_predicted, target_iou)
         # 3. No-object Confidence loss
         noobject_mask = target[:, :, :, 4] == 0.0
 
@@ -79,7 +82,7 @@ class YOLOLoss(nn.Module):
         noobject_confidence_1_predicted = predicted[noobject_mask, 4]
         noobject_confidence_2_predicted = predicted[noobject_mask, 9]
 
-        noobject_loss = self.mse(noobject_confidence_1_predicted, noobject_confidence_target) + self.mse(noobject_confidence_2_predicted, noobject_confidence_target)
+        noobject_loss = self.bce(noobject_confidence_1_predicted, noobject_confidence_target) + self.bce(noobject_confidence_2_predicted, noobject_confidence_target)
 
         # 4. Classes loss
         classes_target = responsible_cells_target[:, 5 * B:]
@@ -101,3 +104,19 @@ class YOLOLoss(nn.Module):
         bboxes[:, 0] = (bboxes[:, 0] + gx) / self.S
         bboxes[:, 1] = (bboxes[:, 1] + gy) / self.S
         return bboxes
+
+    def _activate(self, pred):
+        pred = pred.clone()
+        box1_xy = torch.sigmoid(pred[:, :, :, :2])
+        box1_wh = torch.clamp(f.softplus(pred[:, :, :, 2:4]), min=1e-4, max=1.0)
+
+        box2_xy = torch.sigmoid(pred[:, :, :, 5:7])
+        box2_wh = torch.clamp(f.softplus(pred[:, :, :, 7:9]), min=1e-4, max=1.0)
+
+        # Confidence
+        box1_conf = pred[:, :, :, 4:5]
+        box2_conf = pred[:, :, :, 9:10]
+
+        classes = pred[:, :, :, self.B * 5:]
+
+        return torch.cat([box1_xy, box1_wh, box1_conf, box2_xy, box2_wh, box2_conf, classes], dim=-1)
