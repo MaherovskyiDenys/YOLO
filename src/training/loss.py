@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from configs.config import S, B, C
+from configs.config import S, B, C, LAMBDA_COORD, LAMBDA_NOOBJ
 
 from torchvision.ops import box_convert, complete_box_iou_loss
 
@@ -12,8 +12,8 @@ class YOLOLoss(nn.Module):
         self.B = b
         self.C = c
 
-        self.lambda_coord = 5
-        self.lambda_noobj = 0.5
+        self.lambda_coord = LAMBDA_COORD
+        self.lambda_noobj = LAMBDA_NOOBJ
 
         self.mse = nn.MSELoss()
         self.bce = nn.BCEWithLogitsLoss()

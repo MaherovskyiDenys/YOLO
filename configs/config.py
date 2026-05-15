@@ -26,3 +26,7 @@ IMG_SIZE = (448, 448)  # (h, w)
 S = 7
 B = 2
 C = 20
+
+# Loss
+LAMBDA_COORD = 5
+LAMBDA_NOOBJ = 5e-01
