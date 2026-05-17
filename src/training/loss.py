@@ -1,7 +1,8 @@
 import torch
 from torch import nn
 import torch.nn.functional as f
-from configs.config import S, B, C, LAMBDA_COORD, LAMBDA_NOOBJ
+from configs.config import S, B, C
+from configs.training import LAMBDA_COORD, LAMBDA_NOOBJ
 
 from torchvision.ops import box_convert, complete_box_iou_loss, box_iou
 
