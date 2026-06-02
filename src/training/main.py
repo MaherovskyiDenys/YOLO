@@ -55,7 +55,7 @@ def train():
             writer.add_scalar("Cls/Val", val_output.cls, global_step=epoch)
             writer.add_scalar("Loss/Val", val_output.loss, global_step=epoch)
 
-        torch.save(model.state_dict(), "test-output-60-0.001-0.0001.pth")
+        torch.save(model.state_dict(), f"test-output-{EPOCHS}-{LR}-{BACKBONE_LR}.pth")
 
 if __name__ == "__main__":
     train()
