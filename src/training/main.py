@@ -30,7 +30,7 @@ def train():
         writer.add_text("hparams", f"lr:{LR}\nweight_decay:{WEIGHT_DECAY}")
 
         for epoch in range(EPOCHS):
-            if epoch == 4:  # Unfreeze backbone on n_th epoch
+            if epoch == 10:  # Unfreeze backbone on n_th epoch
                 for param in model.backbone.parameters():
                     param.requires_grad = True
 
@@ -41,8 +41,21 @@ def train():
             train_output = run_single_epoch_train(model, device, dataset_train, loss_func, optimizer)
             val_output = run_single_epoch_val(model, device, dataset_val, loss_func)
 
-            writer.add_scalar("Loss/Train", train_output, global_step=epoch)
-            writer.add_scalar("Loss/Val", val_output, global_step=epoch)
+            # Train
+            writer.add_scalar("CIoU/Train", train_output.ciou, global_step=epoch)
+            writer.add_scalar("Obj/Train", train_output.obj, global_step=epoch)
+            writer.add_scalar("Noobj/Train", train_output.noobj, global_step=epoch)
+            writer.add_scalar("Cls/Train", train_output.cls, global_step=epoch)
+            writer.add_scalar("Loss/Train", train_output.loss, global_step=epoch)
+
+            # Val
+            writer.add_scalar("CIoU/Val", val_output.ciou, global_step=epoch)
+            writer.add_scalar("Obj/Val", val_output.obj, global_step=epoch)
+            writer.add_scalar("Noobj/Val", val_output.noobj, global_step=epoch)
+            writer.add_scalar("Cls/Val", val_output.cls, global_step=epoch)
+            writer.add_scalar("Loss/Val", val_output.loss, global_step=epoch)
+
+        torch.save(model.state_dict(), "test-output-60-0.001-0.0001.pth")
 
 if __name__ == "__main__":
     train()
