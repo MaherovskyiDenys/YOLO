@@ -6,6 +6,8 @@ from configs.training import LAMBDA_COORD, LAMBDA_NOOBJ
 
 from torchvision.ops import box_convert, complete_box_iou_loss, box_iou
 
+from src.schema.loss import YOLOLossSchema
+
 
 class YOLOLoss(nn.Module):
     def __init__(self, s=S, b=B, c=C):
@@ -19,7 +21,7 @@ class YOLOLoss(nn.Module):
 
         self.bce = nn.BCEWithLogitsLoss()
 
-    def forward(self, predicted, target):
+    def forward(self, predicted, target) -> YOLOLossSchema:
         """
         Calculate loss for
             1. CIoU for responsable boxes
@@ -91,7 +93,19 @@ class YOLOLoss(nn.Module):
 
         cls_loss = self.bce(classes_predicted, classes_target)
 
-        return self.lambda_coord * ciou_loss + object_confidence_loss + self.lambda_noobj * noobject_loss + cls_loss
+        # Return
+        ciou = self.lambda_coord * ciou_loss
+        noobject = self.lambda_noobj * noobject_loss
+
+        losses = {
+            "ciou": ciou,
+            "obj": object_confidence_loss,
+            "noobj": noobject,
+            "cls": cls_loss,
+            "loss": ciou + object_confidence_loss + noobject + cls_loss
+        }
+
+        return YOLOLossSchema(**losses)
 
     def _convert_boxes(self, bboxes, gy, gx):
         """
