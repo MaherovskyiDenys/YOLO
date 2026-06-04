@@ -23,6 +23,6 @@ CLASSES = [
 
 IMG_SIZE = (448, 448)  # (h, w)
 
-S = 7
+S = 14
 B = 2
 C = 20

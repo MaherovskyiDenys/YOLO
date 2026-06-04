@@ -14,7 +14,7 @@ class YOLORes(nn.Module):
         self.backbone = nn.Sequential(*(list(resnet.children())[:-2]))
 
         self.head = nn.Sequential(
-            nn.Conv2d(512, 1024, kernel_size=3, padding=1, stride=2, bias=False),
+            nn.Conv2d(512, 1024, kernel_size=3, padding=1, stride=1, bias=False),
             nn.BatchNorm2d(1024),
             nn.LeakyReLU(0.1, inplace=True),
 
