@@ -1,14 +1,15 @@
+from typing import Optional
+
 import torch
 from torch.nn import Module
+from torch.optim import Optimizer
 from torch.utils.data import DataLoader
+from torchmetrics.detection import MeanAveragePrecision
 
 from src.schema.epoch import EpochSchema
-from src.schema.loss import RunningLoss
 from src.training.loss import YOLOLoss
 from src.training.mAP import decode_pred, decode_target
-from torchmetrics.detection import MeanAveragePrecision
-from torch.optim import Optimizer
-from typing import Optional
+from src.utils.metrics import RunningLoss
 
 
 def run_epoch(
