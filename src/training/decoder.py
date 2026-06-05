@@ -62,11 +62,17 @@ def decode_pred(pred):
         boxes_2[:, 2] = boxes_2[:, 2] * new_w
         boxes_2[:, 3] = boxes_2[:, 3] * new_h
 
-        scores_1 = conf_1[b, img_gy_1, img_gx_1]
-        scores_2 = conf_2[b, img_gy_2, img_gx_2]
+        # Apply sigmoid on classes
+        class_probs_1 = torch.sigmoid(pred[b, img_gy_1, img_gx_1, 5 * B:])
+        class_probs_2 = torch.sigmoid(pred[b, img_gy_2, img_gx_2, 5 * B:])
 
-        labels_1 = pred[b, img_gy_1, img_gx_1, 5 * B:].argmax(1)
-        labels_2 = pred[b, img_gy_2, img_gx_2, 5 * B:].argmax(1)
+        # Best class and its probability
+        best_class_prob_1, labels_1 = class_probs_1.max(dim=1)
+        best_class_prob_2, labels_2 = class_probs_2.max(dim=1)
+
+        # Final detection score
+        scores_1 = conf_1[b, img_gy_1, img_gx_1] * best_class_prob_1
+        scores_2 = conf_2[b, img_gy_2, img_gx_2] * best_class_prob_2
 
         boxes = torch.cat([boxes_1, boxes_2], dim=0)
         scores = torch.cat([scores_1, scores_2], dim=0)
