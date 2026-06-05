@@ -2,7 +2,7 @@ import torch
 from torch.utils.tensorboard import SummaryWriter
 from torchmetrics.detection import MeanAveragePrecision
 
-from configs.training import EPOCHS, BACKBONE_LR, BACKBONE_WEIGHT_DECAY, LR, WEIGHT_DECAY
+from configs.training import EPOCHS, LR, WEIGHT_DECAY
 from src.dataset.dataloader import get_loaders
 from src.models.model import YOLORes
 from src.training.epoch import run_epoch

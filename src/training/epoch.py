@@ -8,7 +8,7 @@ from torchmetrics.detection import MeanAveragePrecision
 
 from src.schema.epoch import EpochSchema
 from src.training.loss import YOLOLoss
-from src.training.mAP import decode_pred, decode_target
+from src.training.decoder import decode_pred, decode_target
 from src.utils.metrics import RunningLoss
 
 
