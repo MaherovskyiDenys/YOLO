@@ -1,8 +1,13 @@
+import json
+from pathlib import Path
+
 import torch
+from sklearn.cluster import KMeans
 from torch.utils.data import Dataset
 from torchvision.datasets import VOCDetection
 from torchvision.ops import box_convert
 
+from configs.config import ANCHOR_BOXES
 from configs.config import S, B, C, CLASSES
 
 
@@ -89,3 +94,77 @@ class VOCDatasetYOLO(Dataset):
             image = self.transforms(image)
 
         return image, yolo_target
+
+    def _identify_anchors(self):
+        """
+        Apply K-Means on width and height to identify anchor boxed
+        :return:
+            Returns anchor boxes as a list with len of ANCHOR_BOXES
+        """
+        w, h = self._get_wh()
+
+        data = list(zip(w, h))
+        kmeans: object|KMeans = KMeans(n_clusters=ANCHOR_BOXES, random_state=0, n_init="auto").fit(data)
+
+        return kmeans.cluster_centers_.astype(int).tolist()
+
+    def _get_wh(self) -> tuple[list, list]:
+        """
+        Runs over given dataset, outputs widths/heights of all bounding boxes in it
+
+        :return:
+            Raw data
+            tuple(list[widths], list[heights])
+        """
+        widths, heights = [], []
+
+        for i, t in self.voc:
+            root = t["annotation"]
+
+            objects = root.get("object")
+
+            # Make sure all the boxes are lists
+            if not isinstance(objects, list):
+                objects = [objects]
+
+            for obj in objects:
+                bnd = obj["bndbox"]
+                xmin, ymin = int(bnd["xmin"]), int(bnd["ymin"])
+                xmax, ymax = int(bnd["xmax"]), int(bnd["ymax"])
+
+                # Convert from xyxy to cxcywh
+                box = box_convert(torch.tensor([xmin, ymin, xmax, ymax]), in_fmt='xyxy', out_fmt='cxcywh')
+                cx, cy, w, h = box.tolist()
+
+                # Collect width and height of a box
+                widths.append(w)
+                heights.append(h)
+
+        return widths, heights
+
+    def get_anchors(self) -> list[list[int]]:
+        """
+        Make sure anchors.json exists and save anchor boxes in it
+        :return:
+        """
+        base = Path(__file__).resolve().parents[2]
+        file_path = base / "configs" / "anchors.json"
+
+        if file_path.exists():
+            with open(file_path, "r", encoding="utf-8") as file:
+                try:
+                    anchors = json.load(file)
+                except json.JSONDecodeError:
+                    anchors = None
+        else:
+            anchors = None
+
+        if not anchors:
+            data = {"anchors": self._identify_anchors()}
+
+            with open(file_path, "w", encoding="utf-8") as file:
+                json.dump(data, file)
+
+            return data["anchors"]
+
+        return anchors["anchors"]
