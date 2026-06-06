@@ -21,8 +21,9 @@ CLASSES = [
     "tvmonitor",
 ]
 
-IMG_SIZE = (448, 448)  # (h, w)
+IMG_SIZE = (448, 448)  # (h, w) where h == w
 
-S = 14
+S = int(IMG_SIZE[0] / 32)  # reduced by factor of 32
 B = 2
-C = 20
+ANCHOR_BOXES = 5
+C = len(CLASSES)
