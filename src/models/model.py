@@ -1,14 +1,14 @@
 import torch
 import torch.nn as nn
 
-from configs.config import C, B
+from configs.config import C, B, ANCHOR_BOXES
 
 from torchvision.models import resnet18, ResNet18_Weights
 
 class YOLORes(nn.Module):
-    def __init__(self, boxes: int = B, classes: int = C):
+    def __init__(self, anchor_boxes: int = ANCHOR_BOXES, classes: int = C):
         super().__init__()
-        self.b, self.c = boxes, classes
+        self.anchor_boxes, self.c = anchor_boxes, classes
 
         resnet = resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
         self.backbone = nn.Sequential(*(list(resnet.children())[:-2]))
@@ -19,10 +19,10 @@ class YOLORes(nn.Module):
             nn.LeakyReLU(0.1, inplace=True),
 
             # Fully Convolutional Head
-            nn.Conv2d(1024, self.b * 5 + self.c, kernel_size=1)
+            nn.Conv2d(1024, (5 + self.c) * self.anchor_boxes, kernel_size=1)
         )
 
-    def forward(self, x: torch.Tensor):
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         Forward pass
 
@@ -30,6 +30,6 @@ class YOLORes(nn.Module):
         :return: Tensor permuted to [B, H, W, C]
         """
         features = self.backbone(x)
-        output = self.head(features).permute(0, 2, 3, 1)
+        output = self.head(features)
 
-        return output
+        return output.permute(0, 2, 3, 1)
