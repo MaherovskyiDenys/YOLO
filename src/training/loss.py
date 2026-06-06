@@ -20,6 +20,7 @@ class YOLOLoss(nn.Module):
         self.lambda_noobj = LAMBDA_NOOBJ
 
         self.bce = nn.BCEWithLogitsLoss()
+        self.mse = nn.MSELoss()
 
     def forward(self, predicted, target) -> YOLOLossSchema:
         """
@@ -77,7 +78,7 @@ class YOLOLoss(nn.Module):
         confidence_predicted_2 = responsible_cells_predicted[:, 9]
 
         responsible_confidence_predicted = torch.where(responsible_box_mask, confidence_predicted_1, confidence_predicted_2)
-        object_confidence_loss = self.bce(responsible_confidence_predicted, target_iou)
+        object_confidence_loss = self.mse(responsible_confidence_predicted, target_iou)
         # 3. No-object Confidence loss
         noobject_mask = target[:, :, :, 4] == 0.0
 
@@ -85,7 +86,7 @@ class YOLOLoss(nn.Module):
         noobject_confidence_1_predicted = predicted[noobject_mask, 4]
         noobject_confidence_2_predicted = predicted[noobject_mask, 9]
 
-        noobject_loss = self.bce(noobject_confidence_1_predicted, noobject_confidence_target) + self.bce(noobject_confidence_2_predicted, noobject_confidence_target)
+        noobject_loss = self.mse(noobject_confidence_1_predicted, noobject_confidence_target) + self.mse(noobject_confidence_2_predicted, noobject_confidence_target)
 
         # 4. Classes loss
         classes_target = responsible_cells_target[:, 5 * B:]
@@ -129,8 +130,8 @@ class YOLOLoss(nn.Module):
         box2_wh = torch.clamp(f.softplus(pred[:, :, :, 7:9]), min=1e-4, max=1.0)
 
         # Confidence
-        box1_conf = pred[:, :, :, 4:5]
-        box2_conf = pred[:, :, :, 9:10]
+        box1_conf = torch.sigmoid(pred[:, :, :, 4:5])
+        box2_conf = torch.sigmoid(pred[:, :, :, 9:10])
 
         classes = pred[:, :, :, self.B * 5:]
 
