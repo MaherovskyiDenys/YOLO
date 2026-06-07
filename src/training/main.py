@@ -8,6 +8,7 @@ from src.models.model import YOLORes
 from src.training.epoch import run_epoch
 from src.training.loss import YOLOLoss
 from src.training.optimizer import build_optimizer
+from src.utils.anchors import get_anchors
 from src.utils.backbone import freeze_backbone, unfreeze_backbone
 from src.utils.checkpoint import Checkpoint
 from src.utils.logger import log_epoch, log_config
@@ -20,9 +21,10 @@ def train():
     model = YOLORes().to(device)
     freeze_backbone(model) # Freeze backbone
 
-    dataset_train, dataset_val = get_loaders()
+    dataset_train, _, dataloader_train, dataloader_val = get_loaders()
+    anchors = get_anchors(dataset_train.voc).to(device)
 
-    loss_func = YOLOLoss()
+    loss_func = YOLOLoss(anchors)
     optimizer = build_optimizer(model.head, lr=LR, weight_decay=WEIGHT_DECAY)
     mAP = MeanAveragePrecision(box_format="xyxy")
 
@@ -37,8 +39,8 @@ def train():
             if epoch == 5:
                 unfreeze_backbone(model, optimizer)
 
-            train_output = run_epoch(model, device, dataset_train, loss_func, mAP, optimizer)
-            val_output = run_epoch(model, device, dataset_val, loss_func, mAP)
+            train_output = run_epoch(model, device, dataloader_train, loss_func, mAP, optimizer)
+            val_output = run_epoch(model, device, dataloader_val, loss_func, mAP)
 
             log_epoch(writer, train_output, val_output, epoch)
 
