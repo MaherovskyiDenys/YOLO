@@ -17,6 +17,7 @@ class VOCDatasetYOLO(Dataset):
         )
 
         self.transforms = transforms
+        self.anchors = get_anchors(self.voc)
 
         self.classes = {name: i for i, name in enumerate(CLASSES)}
 
@@ -56,12 +57,10 @@ class VOCDatasetYOLO(Dataset):
             box = box_convert(torch.tensor([xmin, ymin, xmax, ymax]), in_fmt='xyxy', out_fmt='cxcywh')
             cx, cy, w, h = box.tolist()
 
-            anchors = get_anchors(self.voc)
-
             # Compare truth box with anchor by measuring highest IoU
             box1 = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
-            anchor_boxes = torch.zeros(anchors.shape[0], 4)
-            anchor_boxes[..., 2:] = anchors
+            anchor_boxes = torch.zeros(self.anchors.shape[0], 4)
+            anchor_boxes[..., 2:] = self.anchors
 
             iou_box = box_iou(box1, anchor_boxes, fmt="cxcywh").argmax(1).item()
 
