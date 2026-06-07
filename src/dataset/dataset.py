@@ -5,10 +5,9 @@ import torch
 from sklearn.cluster import KMeans
 from torch.utils.data import Dataset
 from torchvision.datasets import VOCDetection
-from torchvision.ops import box_convert
+from torchvision.ops import box_convert, box_iou
 
-from configs.config import ANCHOR_BOXES
-from configs.config import S, B, C, CLASSES
+from configs.config import S, C, CLASSES, ANCHOR_BOXES
 
 
 class VOCDatasetYOLO(Dataset):
@@ -38,7 +37,7 @@ class VOCDatasetYOLO(Dataset):
         if not isinstance(objects, list):
             objects = [objects]
 
-        labels = torch.zeros((S, S, 5 * B + C))
+        labels = torch.zeros((S, S, (5 + C) * ANCHOR_BOXES))
 
         for obj in objects:
             label = obj.get("name")
@@ -60,6 +59,22 @@ class VOCDatasetYOLO(Dataset):
             box = box_convert(torch.tensor([xmin, ymin, xmax, ymax]), in_fmt='xyxy', out_fmt='cxcywh')
             cx, cy, w, h = box.tolist()
 
+            anchors = self.get_anchors()
+
+            iou = 0
+            id = 0
+
+            # Compare truth box with anchor by measuring highest IoU
+            for idx, (w_anchor, h_anchor) in enumerate(anchors):
+                box1 = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
+                box2 = torch.tensor([0.0, 0.0, w_anchor, h_anchor]).reshape(1, -1)
+
+                iou_box = box_iou(box1, box2, fmt="cxcywh")
+
+                if iou < iou_box.item():
+                    iou = iou_box.item()
+                    id = idx
+
             # Normalize so now values represent % to the image
             cx = cx / width
             cy = cy / height
@@ -74,12 +89,13 @@ class VOCDatasetYOLO(Dataset):
             cy_cell = cy * S - gy
             cx_cell = cx * S - gx
 
-            # Check if cell is already used, by verifying conf
-            if labels[gy, gx, 4] > 0.0:
+            idx = (5 + C) * id
+            # Check if cell and anchor box is already used, by verifying conf
+            if labels[gy, gx, idx + 4] > 0.0:
                 continue
 
-            labels[gy, gx, 0:5] = torch.tensor([cx_cell, cy_cell, w, h, 1.0])
-            labels[gy, gx, 5 * B:] = classes
+            labels[gy, gx, idx:idx + 5] = torch.tensor([cx_cell, cy_cell, w, h, 1.0])
+            labels[gy, gx, idx + 5:idx + 5 + C] = classes
 
         return labels
 
