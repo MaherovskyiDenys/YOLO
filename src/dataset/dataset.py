@@ -3,6 +3,7 @@ from pathlib import Path
 
 import torch
 from sklearn.cluster import KMeans
+from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.datasets import VOCDetection
 from torchvision.ops import box_convert, box_iou
@@ -37,7 +38,7 @@ class VOCDatasetYOLO(Dataset):
         if not isinstance(objects, list):
             objects = [objects]
 
-        labels = torch.zeros((S, S, (5 + C) * ANCHOR_BOXES))
+        labels = torch.zeros((S, S, ANCHOR_BOXES, (5 + C)))
 
         for obj in objects:
             label = obj.get("name")
@@ -61,19 +62,12 @@ class VOCDatasetYOLO(Dataset):
 
             anchors = self.get_anchors()
 
-            iou = 0
-            id = 0
-
             # Compare truth box with anchor by measuring highest IoU
-            for idx, (w_anchor, h_anchor) in enumerate(anchors):
-                box1 = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
-                box2 = torch.tensor([0.0, 0.0, w_anchor, h_anchor]).reshape(1, -1)
+            box1 = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
+            anchor_boxes = torch.zeros(anchors.shape[0], 4)
+            anchor_boxes[..., 2:] = anchors
 
-                iou_box = box_iou(box1, box2, fmt="cxcywh")
-
-                if iou < iou_box.item():
-                    iou = iou_box.item()
-                    id = idx
+            iou_box = box_iou(box1, anchor_boxes, fmt="cxcywh")
 
             # Normalize so now values represent % to the image
             cx = cx / width
@@ -89,13 +83,14 @@ class VOCDatasetYOLO(Dataset):
             cy_cell = cy * S - gy
             cx_cell = cx * S - gx
 
-            idx = (5 + C) * id
+            idx = iou_box.argmax(1).item()
+
             # Check if cell and anchor box is already used, by verifying conf
-            if labels[gy, gx, idx + 4] > 0.0:
+            if labels[gy, gx, idx, 4] > 0.0:
                 continue
 
-            labels[gy, gx, idx:idx + 5] = torch.tensor([cx_cell, cy_cell, w, h, 1.0])
-            labels[gy, gx, idx + 5:idx + 5 + C] = classes
+            labels[gy, gx, idx, :5] = torch.tensor([cx_cell, cy_cell, w, h, 1.0])
+            labels[gy, gx, idx, 5:] = classes
 
         return labels
 
@@ -158,7 +153,7 @@ class VOCDatasetYOLO(Dataset):
 
         return widths, heights
 
-    def get_anchors(self) -> list[list[int]]:
+    def get_anchors(self) -> Tensor:
         """
         Make sure anchors.json exists and save anchor boxes in it
         :return:
@@ -181,6 +176,6 @@ class VOCDatasetYOLO(Dataset):
             with open(file_path, "w", encoding="utf-8") as file:
                 json.dump(data, file)
 
-            return data["anchors"]
+            return torch.tensor(data["anchors"]).reshape(-1, 2)
 
-        return anchors["anchors"]
+        return torch.tensor(anchors["anchors"]).reshape(-1, 2)
