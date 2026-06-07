@@ -1,147 +1,107 @@
 import torch
 from torchvision.ops import box_convert, nms
 
-from configs.config import B, S, IMG_SIZE
+from configs.config import S, IMG_SIZE
 from configs.training import CONF_THRESHOLD, NMS_IOU_THRESHOLD
-from src.training.loss import YOLOLoss
 
 new_h, new_w = IMG_SIZE
 
 def decode_pred(pred):
     """
+    Decodes predicted output to torchmetrics format
 
     :param pred:
-        dims [B, 7, 7, 7] raw logits
+        Model's activated and reshaped output
+        dims [B, S, S, AB, 5 + C]
     :return:
-      list[
-          dict(
-            boxes=tensor([[258.0, 41.0, 606.0, 285.0]]),
-            scores=tensor([0.536]),
-            labels=tensor([0]),
-          )
-      ]
+        A list of dictionaries with boxes/scores/labels
+
+        list[
+            dict(
+              boxes=tensor([[x1, y1, x2, y2]]),
+              scores=tensor([conf * Pr(obj)]),
+              labels=tensor([t]),
+            )
+        ]
     """
-    result = []
-    loss_func = YOLOLoss()
+    conf = pred[..., 4]
+    mask = (conf > CONF_THRESHOLD)
+    b_idx, gy, gx, a = mask.nonzero(as_tuple=True)
 
-    with torch.no_grad():
-        pred = loss_func._activate(pred)
+    boxes = pred[b_idx, gy, gx, a, :4]
 
-    # _activate doesn't apply sigmoid on conf
-    conf_1 = torch.sigmoid(pred[:, :, :, 4])
-    conf_2 = torch.sigmoid(pred[:, :, :, 9])
+    # Denormalize, convert cxcy relative to the whole img
+    boxes[:, 0] = ((boxes[:, 0] + gx) / S) * new_w
+    boxes[:, 1] = ((boxes[:, 1] + gy) / S) * new_h
+    boxes[:, 2] = boxes[:, 2] * new_w
+    boxes[:, 3] = boxes[:, 3] * new_h
 
-    mask_1 = conf_1 > CONF_THRESHOLD
-    mask_2 = conf_2 > CONF_THRESHOLD
+    # Apply sigmoid on classes
+    class_probs, labels = torch.sigmoid(pred[b_idx, gy, gx, a, 5:]).max(dim=1)
 
-    b_idx_1, gy_1, gx_1 = mask_1.nonzero(as_tuple=True)
-    b_idx_2, gy_2, gx_2 = mask_2.nonzero(as_tuple=True)
+    # Final detection score (conf * Pr(obj))
+    scores = conf[b_idx, gy, gx, a] * class_probs
+    boxes = box_convert(boxes, in_fmt="cxcywh", out_fmt="xyxy")
 
-    for b in range(pred.shape[0]):
-        mask_1 = (b_idx_1 == b)
-        mask_2 = (b_idx_2 == b)
+    # Just make sure that boxes coordinates falls inside an image,
+    # sometimes produces negative values becase converting from cxcywh to xyxy
+    boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, new_w)
+    boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, new_h)
 
-        img_gy_1 = gy_1[mask_1]
-        img_gx_1 = gx_1[mask_1]
+    keep_idx = nms(boxes, scores, NMS_IOU_THRESHOLD)
 
-        img_gy_2 = gy_2[mask_2]
-        img_gx_2 = gx_2[mask_2]
+    # Update batch indexes, after nms b_idx sometimes reduced
+    b_idx = b_idx[keep_idx]
 
-        boxes_1 = pred[b, img_gy_1, img_gx_1, 0:4]
-        boxes_2 = pred[b, img_gy_2, img_gx_2, 5:9]
+    boxes = boxes[keep_idx]
+    scores = scores[keep_idx]
+    labels = labels[keep_idx]
 
-        # cx, cy - relative to the whole image + denormalized
-        boxes_1[:, 0] = ((boxes_1[:, 0] + img_gx_1) / S) * new_w
-        boxes_1[:, 1] = ((boxes_1[:, 1] + img_gy_1) / S) * new_h
-        boxes_2[:, 0] = ((boxes_2[:, 0] + img_gx_2) / S) * new_w
-        boxes_2[:, 1] = ((boxes_2[:, 1] + img_gy_2) / S) * new_h
-
-        # w, h - denormalized
-        boxes_1[:, 2] = boxes_1[:, 2] * new_w
-        boxes_1[:, 3] = boxes_1[:, 3] * new_h
-        boxes_2[:, 2] = boxes_2[:, 2] * new_w
-        boxes_2[:, 3] = boxes_2[:, 3] * new_h
-
-        # Apply sigmoid on classes
-        class_probs_1 = torch.sigmoid(pred[b, img_gy_1, img_gx_1, 5 * B:])
-        class_probs_2 = torch.sigmoid(pred[b, img_gy_2, img_gx_2, 5 * B:])
-
-        # Best class and its probability
-        best_class_prob_1, labels_1 = class_probs_1.max(dim=1)
-        best_class_prob_2, labels_2 = class_probs_2.max(dim=1)
-
-        # Final detection score
-        scores_1 = conf_1[b, img_gy_1, img_gx_1] * best_class_prob_1
-        scores_2 = conf_2[b, img_gy_2, img_gx_2] * best_class_prob_2
-
-        boxes = torch.cat([boxes_1, boxes_2], dim=0)
-        scores = torch.cat([scores_1, scores_2], dim=0)
-        labels = torch.cat([labels_1, labels_2], dim=0)
-
-        boxes = box_convert(boxes, in_fmt="cxcywh", out_fmt="xyxy")
-
-        # Just make sure that boxes coordinates falls inside an image,
-        # sometimes produces negative values becase converting from cxcywh to xyxy
-        boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, new_w)
-        boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, new_h)
-
-        # Non-Max Suppression
-        keep_idx = nms(boxes, scores, NMS_IOU_THRESHOLD)
-
-        boxes = boxes[keep_idx]
-        scores = scores[keep_idx]
-        labels = labels[keep_idx]
-
-        result.append({
-            "boxes": boxes,
-            "scores": scores,
-            "labels": labels
-        })
-
-    return result
+    return [
+        {
+            "boxes": boxes[b_idx == i],
+            "scores": scores[b_idx == i],
+            "labels": labels[b_idx == i]
+        } for i in range(pred.shape[0])
+    ]
 
 def decode_target(target):
     """
+    Decodes target output to torchmetrics format
 
     :param target:
-        dims [B, 7, 7, 7]
+        Reshaped target output
+        dims [B, S, S, AB, 5 + C]
     :return:
-      list[
-          dict(
-            boxes=tensor([[258.0, 41.0, 606.0, 285.0]]),
-            labels=tensor([0]),
-          )
-      ]
+
+        list[
+            dict(
+              boxes=tensor([[x1, y1, x2, y2]]),
+              labels=tensor([t]),
+            )
+        ]
     """
-    b_idx, gy, gx = target[:, :, :, 4].nonzero(as_tuple=True)
+    b_idx, gy, gx, a = target[..., 4].nonzero(as_tuple=True)
 
-    result = []
+    boxes = target[b_idx, gy, gx, a, :4]
+    labels = target[b_idx, gy, gx, a, 5:].argmax(dim=1)
 
-    for b in range(target.shape[0]):
-        mask = (b_idx == b)
+    # Denormalize, convert cxcy relative to the whole img
+    boxes[:, 0] = ((boxes[:, 0] + gx) / S) * new_w
+    boxes[:, 1] = ((boxes[:, 1] + gy) / S) * new_h
+    boxes[:, 2] = boxes[:, 2] * new_w
+    boxes[:, 3] = boxes[:, 3] * new_h
 
-        img_gy = gy[mask]
-        img_gx = gx[mask]
+    boxes = box_convert(boxes, in_fmt="cxcywh", out_fmt="xyxy")
 
-        boxes = target[b, img_gy, img_gx, 0:4]
-        labels = target[b, img_gy, img_gx, 5 * B:].argmax(dim=1)
+    # Just make sure that boxes coordinates falls inside an image,
+    # sometimes produces negative values becase converting from cxcywh to xyxy
+    boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, new_w)
+    boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, new_h)
 
-        # Convert cx, cy
-        boxes[:, 0] = ((boxes[:, 0] + img_gx) / S) * new_w
-        boxes[:, 1] = ((boxes[:, 1] + img_gy) / S) * new_h
-        boxes[:, 2] = boxes[:, 2] * new_w
-        boxes[:, 3] = boxes[:, 3] * new_h
-
-        boxes = box_convert(boxes, in_fmt="cxcywh", out_fmt="xyxy")
-
-        # Just make sure that boxes coordinates falls inside an image,
-        # sometimes produces negative values becase converting from cxcywh to xyxy
-        boxes[:, [0, 2]] = boxes[:, [0, 2]].clamp(0, new_w)
-        boxes[:, [1, 3]] = boxes[:, [1, 3]].clamp(0, new_h)
-
-        result.append({
-            "boxes": boxes,
-            "labels": labels
-        })
-
-    return result
+    return [
+        {
+         "boxes": boxes[b_idx == i],
+         "labels": labels[b_idx == i]
+        } for i in range(target.shape[0])
+    ]
