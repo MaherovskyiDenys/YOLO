@@ -22,4 +22,4 @@ def get_loaders(
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
 
-    return train_dataloader, val_dataloader
+    return train_dataset, val_dataset, train_dataloader, val_dataloader
