@@ -6,9 +6,10 @@ from torch.optim import Optimizer
 from torch.utils.data import DataLoader
 from torchmetrics.detection import MeanAveragePrecision
 
+from configs.config import ANCHOR_BOXES, C
 from src.schema.epoch import EpochSchema
-from src.training.loss import YOLOLoss
 from src.training.decoder import decode_pred, decode_target
+from src.training.loss import YOLOLoss
 from src.utils.metrics import RunningLoss
 
 
@@ -36,6 +37,12 @@ def run_epoch(
 
             output = model(img)
 
+            B, S, _, _ = output.shape
+            output = output.reshape(B, S, S, ANCHOR_BOXES, 5 + C)
+            target = target.reshape(B, S, S, ANCHOR_BOXES, 5 + C)
+
+            output = loss_func.activate(output)
+
             loss_func_output = loss_func(output, target)
             loss = loss_func_output.loss
 
@@ -52,7 +59,6 @@ def run_epoch(
 
         losses = running_loss.compute()
 
-        # mAP
-        map_results = metric.compute()
+        mAP_results = metric.compute()
 
-        return EpochSchema(**losses, mAP=map_results)
+        return EpochSchema(**losses, mAP=mAP_results)
