@@ -1,11 +1,10 @@
 import torch
-from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.datasets import VOCDetection
 from torchvision.ops import box_convert, box_iou
 
 from configs.config import S, C, CLASSES, ANCHOR_BOXES
-from src.utils.anchors import get_anchors, save_anchors, get_wh, identify_anchors
+from src.utils.anchors import get_anchors
 
 
 class VOCDatasetYOLO(Dataset):

@@ -1,9 +1,9 @@
 import torch
 import torch.nn as nn
-
-from configs.config import C, B, ANCHOR_BOXES
-
 from torchvision.models import resnet18, ResNet18_Weights
+
+from configs.config import C, ANCHOR_BOXES
+
 
 class YOLORes(nn.Module):
     def __init__(self, anchor_boxes: int = ANCHOR_BOXES, classes: int = C):
