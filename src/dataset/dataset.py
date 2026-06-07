@@ -1,12 +1,11 @@
 import torch
-from sklearn.cluster import KMeans
 from torch import Tensor
 from torch.utils.data import Dataset
 from torchvision.datasets import VOCDetection
 from torchvision.ops import box_convert, box_iou
 
 from configs.config import S, C, CLASSES, ANCHOR_BOXES
-from src.utils.anchors import get_anchors, save_anchors, get_wh
+from src.utils.anchors import get_anchors, save_anchors, get_wh, identify_anchors
 
 
 class VOCDatasetYOLO(Dataset):
@@ -58,7 +57,7 @@ class VOCDatasetYOLO(Dataset):
             box = box_convert(torch.tensor([xmin, ymin, xmax, ymax]), in_fmt='xyxy', out_fmt='cxcywh')
             cx, cy, w, h = box.tolist()
 
-            anchors = self.get_anchors()
+            anchors = get_anchors(self.voc)
 
             # Compare truth box with anchor by measuring highest IoU
             box1 = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
@@ -103,30 +102,3 @@ class VOCDatasetYOLO(Dataset):
             image = self.transforms(image)
 
         return image, yolo_target
-
-    def _identify_anchors(self):
-        """
-        Apply K-Means on width and height to identify anchor boxed
-        :return:
-            Returns list of anchor boxes with [W, H]
-        """
-        w, h = get_wh(self.voc)
-
-        data = list(zip(w, h))
-        kmeans: object|KMeans = KMeans(n_clusters=ANCHOR_BOXES, random_state=0, n_init="auto").fit(data)
-
-        return kmeans.cluster_centers_.astype(int).tolist()
-
-    def get_anchors(self) -> Tensor:
-        """
-        Makes sure anchors.json exists and saves anchor boxes in it
-        :return:
-            Anchor boxes as a tensor with dims [N, 2]
-        """
-        anchors = get_anchors()
-
-        if not anchors:
-            anchors = {"anchors": self._identify_anchors()}
-            save_anchors(anchors)
-
-        return torch.tensor(anchors["anchors"]).reshape(-1, 2)
