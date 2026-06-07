@@ -1,6 +1,3 @@
-import json
-from pathlib import Path
-
 import torch
 from sklearn.cluster import KMeans
 from torch import Tensor
@@ -9,6 +6,7 @@ from torchvision.datasets import VOCDetection
 from torchvision.ops import box_convert, box_iou
 
 from configs.config import S, C, CLASSES, ANCHOR_BOXES
+from src.utils.anchors import get_anchors, save_anchors, get_wh
 
 
 class VOCDatasetYOLO(Dataset):
@@ -38,7 +36,7 @@ class VOCDatasetYOLO(Dataset):
         if not isinstance(objects, list):
             objects = [objects]
 
-        labels = torch.zeros((S, S, ANCHOR_BOXES, (5 + C)))
+        labels = torch.zeros((S, S, (5 + C) * ANCHOR_BOXES))
 
         for obj in objects:
             label = obj.get("name")
@@ -67,7 +65,7 @@ class VOCDatasetYOLO(Dataset):
             anchor_boxes = torch.zeros(anchors.shape[0], 4)
             anchor_boxes[..., 2:] = anchors
 
-            iou_box = box_iou(box1, anchor_boxes, fmt="cxcywh")
+            iou_box = box_iou(box1, anchor_boxes, fmt="cxcywh").argmax(1).item()
 
             # Normalize so now values represent % to the image
             cx = cx / width
@@ -83,14 +81,14 @@ class VOCDatasetYOLO(Dataset):
             cy_cell = cy * S - gy
             cx_cell = cx * S - gx
 
-            idx = iou_box.argmax(1).item()
+            idx = (5 + C) * iou_box
 
             # Check if cell and anchor box is already used, by verifying conf
-            if labels[gy, gx, idx, 4] > 0.0:
+            if labels[gy, gx, idx + 4] > 0.0:
                 continue
 
-            labels[gy, gx, idx, :5] = torch.tensor([cx_cell, cy_cell, w, h, 1.0])
-            labels[gy, gx, idx, 5:] = classes
+            labels[gy, gx, idx:idx + 5] = torch.tensor([cx_cell, cy_cell, w, h, 1.0])
+            labels[gy, gx, idx + 5:idx + 5 + C] = classes
 
         return labels
 
@@ -110,72 +108,25 @@ class VOCDatasetYOLO(Dataset):
         """
         Apply K-Means on width and height to identify anchor boxed
         :return:
-            Returns anchor boxes as a list with len of ANCHOR_BOXES
+            Returns list of anchor boxes with [W, H]
         """
-        w, h = self._get_wh()
+        w, h = get_wh(self.voc)
 
         data = list(zip(w, h))
         kmeans: object|KMeans = KMeans(n_clusters=ANCHOR_BOXES, random_state=0, n_init="auto").fit(data)
 
         return kmeans.cluster_centers_.astype(int).tolist()
 
-    def _get_wh(self) -> tuple[list, list]:
-        """
-        Runs over given dataset, outputs widths/heights of all bounding boxes in it
-
-        :return:
-            Raw data
-            tuple(list[widths], list[heights])
-        """
-        widths, heights = [], []
-
-        for i, t in self.voc:
-            root = t["annotation"]
-
-            objects = root.get("object")
-
-            # Make sure all the boxes are lists
-            if not isinstance(objects, list):
-                objects = [objects]
-
-            for obj in objects:
-                bnd = obj["bndbox"]
-                xmin, ymin = int(bnd["xmin"]), int(bnd["ymin"])
-                xmax, ymax = int(bnd["xmax"]), int(bnd["ymax"])
-
-                # Convert from xyxy to cxcywh
-                box = box_convert(torch.tensor([xmin, ymin, xmax, ymax]), in_fmt='xyxy', out_fmt='cxcywh')
-                cx, cy, w, h = box.tolist()
-
-                # Collect width and height of a box
-                widths.append(w)
-                heights.append(h)
-
-        return widths, heights
-
     def get_anchors(self) -> Tensor:
         """
-        Make sure anchors.json exists and save anchor boxes in it
+        Makes sure anchors.json exists and saves anchor boxes in it
         :return:
+            Anchor boxes as a tensor with dims [N, 2]
         """
-        base = Path(__file__).resolve().parents[2]
-        file_path = base / "configs" / "anchors.json"
-
-        if file_path.exists():
-            with open(file_path, "r", encoding="utf-8") as file:
-                try:
-                    anchors = json.load(file)
-                except json.JSONDecodeError:
-                    anchors = None
-        else:
-            anchors = None
+        anchors = get_anchors()
 
         if not anchors:
-            data = {"anchors": self._identify_anchors()}
-
-            with open(file_path, "w", encoding="utf-8") as file:
-                json.dump(data, file)
-
-            return torch.tensor(data["anchors"]).reshape(-1, 2)
+            anchors = {"anchors": self._identify_anchors()}
+            save_anchors(anchors)
 
         return torch.tensor(anchors["anchors"]).reshape(-1, 2)
