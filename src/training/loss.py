@@ -1,20 +1,20 @@
 import torch
 from torch import nn
-import torch.nn.functional as f
-from configs.config import S, B, C
+from torchvision.ops import box_convert, complete_box_iou_loss
+
+from configs.config import S, C, ANCHOR_BOXES, IMG_SIZE
 from configs.training import LAMBDA_COORD, LAMBDA_NOOBJ
-
-from torchvision.ops import box_convert, complete_box_iou_loss, box_iou
-
 from src.schema.loss import YOLOLossSchema
 
 
 class YOLOLoss(nn.Module):
-    def __init__(self, s=S, b=B, c=C):
+    def __init__(self, anchors: torch.Tensor):
         super().__init__()
-        self.S = s
-        self.B = b
-        self.C = c
+
+        self.anchors = anchors / IMG_SIZE[0]  # Normalize given anchor boxes
+
+        self.S = S
+        self.C = C
 
         self.lambda_coord = LAMBDA_COORD
         self.lambda_noobj = LAMBDA_NOOBJ
@@ -24,73 +24,54 @@ class YOLOLoss(nn.Module):
 
     def forward(self, predicted, target) -> YOLOLossSchema:
         """
-        Calculate loss for
-            1. CIoU for responsable boxes
+        Calculates loss for
+            1. CIoU for responsable anchor boxes
             2. Object Confidence Loss
             3. No-object Confidence loss
             4. Classes loss
 
-        Return:
-            loss
-
-        :param predicted: Raw logits
+        :param predicted:
+            Tensor dims [B, S, S, AB, (5 + C)] - Already activated logits
         :param target:
+            Tensor dims [B, S, S, AB, (5 + C)]
         :return:
+            Dataclass YOLOLossSchema with losses (ciou, obj, noobj, cls, loss)
         """
-        predicted = self._activate(predicted)
-        b_idx, gy, gx = target[:, :, :, 4].nonzero(as_tuple=True)
+        b_idx, gy, gx, a = target[..., 4].nonzero(as_tuple=True)
 
         # Cell Selection
-        responsible_cells_target = target[b_idx, gy, gx]
-        responsible_cells_predicted = predicted[b_idx, gy, gx]
+        responsible_cells_target = target[b_idx, gy, gx, a]
+        responsible_cells_predicted = predicted[b_idx, gy, gx, a]
 
-        # 1. CIoU for responsable boxes
+        # 1. CIoU
+        true_bboxes = responsible_cells_target[..., :4].clone()
+        bboxes_predicted = responsible_cells_predicted[..., :4].clone()
 
-        # Boxes Selection
-        true_bboxes = responsible_cells_target[:, :4].clone()
-        bboxes_1_predicted = responsible_cells_predicted[:, :4].clone()
-        bboxes_2_predicted = responsible_cells_predicted[:, 5:9].clone()
-
-        # Note: Boxes are relative to the cell we need to convert CXCY to global img CXCY
+        # convert CXCY to global img CXCY
         true_bboxes = self._convert_boxes(true_bboxes, gy, gx)
-        bboxes_1_predicted = self._convert_boxes(bboxes_1_predicted, gy, gx)
-        bboxes_2_predicted = self._convert_boxes(bboxes_2_predicted, gy, gx)
+        bboxes_predicted = self._convert_boxes(bboxes_predicted, gy, gx)
 
         # Convert to XYXY format
-        true_bboxes_xyxy = box_convert(true_bboxes, in_fmt="cxcywh", out_fmt="xyxy")
-        bboxes_1_predicted_xyxy = box_convert(bboxes_1_predicted, in_fmt="cxcywh", out_fmt="xyxy")
-        bboxes_2_predicted_xyxy = box_convert(bboxes_2_predicted, in_fmt="cxcywh", out_fmt="xyxy")
+        true_xyxy = box_convert(true_bboxes, in_fmt="cxcywh", out_fmt="xyxy")
+        bboxes_xyxy = box_convert(bboxes_predicted, in_fmt="cxcywh", out_fmt="xyxy")
 
-        ciou_1 = complete_box_iou_loss(true_bboxes_xyxy, bboxes_1_predicted_xyxy, reduction="none")
-        ciou_2 = complete_box_iou_loss(true_bboxes_xyxy, bboxes_2_predicted_xyxy, reduction="none")
-
-        # Choosing responsible box dims: [n] with number of boxes
-        responsible_box_mask = ciou_1 < ciou_2
-
-        ciou_loss = torch.where(responsible_box_mask, ciou_1, ciou_2).mean()
-
+        ciou_loss = complete_box_iou_loss(true_xyxy, bboxes_xyxy, reduction="mean")
         # 2. Object Confidence Loss
-        iou_1 = box_iou(true_bboxes_xyxy, bboxes_1_predicted_xyxy, fmt="xyxy").diag()
-        iou_2 = box_iou(true_bboxes_xyxy, bboxes_2_predicted_xyxy, fmt="xyxy").diag()
+        iou_targets = self._calculate_iou(bboxes_xyxy.detach(), true_xyxy)
 
-        target_iou = torch.where(responsible_box_mask, iou_1, iou_2).detach()
-        confidence_predicted_1 = responsible_cells_predicted[:, 4]
-        confidence_predicted_2 = responsible_cells_predicted[:, 9]
+        conf_pred = responsible_cells_predicted[..., 4]
+        obj_conf_loss = self.mse(conf_pred, iou_targets)
 
-        responsible_confidence_predicted = torch.where(responsible_box_mask, confidence_predicted_1, confidence_predicted_2)
-        object_confidence_loss = self.mse(responsible_confidence_predicted, target_iou)
         # 3. No-object Confidence loss
-        noobject_mask = target[:, :, :, 4] == 0.0
+        noobj_mask = target[..., 4] == 0.0
 
-        noobject_confidence_target = target[noobject_mask, 4]
-        noobject_confidence_1_predicted = predicted[noobject_mask, 4]
-        noobject_confidence_2_predicted = predicted[noobject_mask, 9]
+        noobj_conf_target = target[noobj_mask, 4]
+        noobj_conf_pred = predicted[noobj_mask, 4]
 
-        noobject_loss = self.mse(noobject_confidence_1_predicted, noobject_confidence_target) + self.mse(noobject_confidence_2_predicted, noobject_confidence_target)
-
+        noobject_loss = self.mse(noobj_conf_pred, noobj_conf_target)
         # 4. Classes loss
-        classes_target = responsible_cells_target[:, 5 * B:]
-        classes_predicted = responsible_cells_predicted[:, 5 * B:]
+        classes_target = responsible_cells_target[..., 5:]
+        classes_predicted = responsible_cells_predicted[..., 5:]
 
         cls_loss = self.bce(classes_predicted, classes_target)
 
@@ -100,39 +81,66 @@ class YOLOLoss(nn.Module):
 
         losses = {
             "ciou": ciou,
-            "obj": object_confidence_loss,
+            "obj": obj_conf_loss,
             "noobj": noobject,
             "cls": cls_loss,
-            "loss": ciou + object_confidence_loss + noobject + cls_loss
+            "loss": ciou + obj_conf_loss + noobject + cls_loss
         }
 
         return YOLOLossSchema(**losses)
 
     def _convert_boxes(self, bboxes, gy, gx):
         """
+        Converts bounding boxes' relation to the whole img
 
-        :param bboxes: [n, 4]
-        :param gy: [y]
-        :param gx: [x]
-        :return: Relative to whole img
+        :param bboxes: Tensor dims [N, 4]
+        :param gy: Tensor dims [n]
+        :param gx: Tensor dims [n]
+        :return:
+            Tensor dims [N, 4] - Bounding boxes that are relative to the whole img
         """
 
-        bboxes[:, 0] = (bboxes[:, 0] + gx) / self.S
-        bboxes[:, 1] = (bboxes[:, 1] + gy) / self.S
-        return bboxes
+        cx = (bboxes[..., 0] + gx) / self.S
+        cy = (bboxes[..., 1] + gy) / self.S
+        w = bboxes[..., 2]
+        h = bboxes[..., 3]
+        return torch.stack([cx, cy, w, h], dim=-1)
 
-    def _activate(self, pred):
-        pred = pred.clone()
-        box1_xy = torch.sigmoid(pred[:, :, :, :2])
-        box1_wh = torch.clamp(f.softplus(pred[:, :, :, 2:4]), min=1e-4, max=1.0)
+    def activate(self, pred):
+        """
+        Applies activation functions on predicted output
 
-        box2_xy = torch.sigmoid(pred[:, :, :, 5:7])
-        box2_wh = torch.clamp(f.softplus(pred[:, :, :, 7:9]), min=1e-4, max=1.0)
+        :param pred:
+            Tensor dims [B, S, S, AB, 5 + C]
+        :return:
+            Tensor dims [B, S, S, AB, 5 + C] - Activation applied
+        """
 
-        # Confidence
-        box1_conf = torch.sigmoid(pred[:, :, :, 4:5])
-        box2_conf = torch.sigmoid(pred[:, :, :, 9:10])
+        output = torch.zeros_like(pred)
+        anchors_wh = self.anchors.view(1, 1, 1, ANCHOR_BOXES, 2) # change shape to match multiplication
 
-        classes = pred[:, :, :, self.B * 5:]
+        output[..., 0:2] = torch.sigmoid(pred[..., 0:2])
+        output[..., 2:4] = anchors_wh * torch.exp(pred[..., 2:4])
 
-        return torch.cat([box1_xy, box1_wh, box1_conf, box2_xy, box2_wh, box2_conf, classes], dim=-1)
+        output[..., 4:5] = torch.sigmoid(pred[..., 4:5])
+
+        output[..., 5:] = pred[..., 5:]
+
+        return output
+
+    @staticmethod
+    def _calculate_iou(pred_xyxy, true_xyxy):
+
+        inter_xmin = torch.max(pred_xyxy[:, 0], true_xyxy[:, 0])
+        inter_ymin = torch.max(pred_xyxy[:, 1], true_xyxy[:, 1])
+        inter_xmax = torch.min(pred_xyxy[:, 2], true_xyxy[:, 2])
+        inter_ymax = torch.min(pred_xyxy[:, 3], true_xyxy[:, 3])
+
+        inter_area = torch.clamp(inter_xmax - inter_xmin, min=0) * torch.clamp(inter_ymax - inter_ymin, min=0)
+
+        pred_area = (pred_xyxy[:, 2] - pred_xyxy[:, 0]) * (pred_xyxy[:, 3] - pred_xyxy[:, 1])
+
+        true_area = (true_xyxy[:, 2] - true_xyxy[:, 0]) * (true_xyxy[:, 3] - true_xyxy[:, 1])
+        union_area = pred_area + true_area - inter_area
+
+        return inter_area / (union_area + 1e-6)
