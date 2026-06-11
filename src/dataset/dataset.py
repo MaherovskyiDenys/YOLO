@@ -39,11 +39,6 @@ class VOCDatasetYOLO(Dataset):
 
         for obj in objects:
             label = obj.get("name")
-            difficult = obj.get("difficult")
-
-            # Skip bounding boxes with difficult flag
-            if difficult == "1":
-                continue
 
             classes = torch.zeros(C)
             label_idx = self.classes[label]
@@ -58,11 +53,11 @@ class VOCDatasetYOLO(Dataset):
             cx, cy, w, h = box.tolist()
 
             # Compare truth box with anchor by measuring highest IoU
-            box1 = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
+            box = torch.tensor([0.0, 0.0, w, h]).reshape(1, -1)
             anchor_boxes = torch.zeros(self.anchors.shape[0], 4)
             anchor_boxes[..., 2:] = self.anchors
 
-            iou_box = box_iou(box1, anchor_boxes, fmt="cxcywh").argmax(1).item()
+            iou_box = box_iou(box, anchor_boxes, fmt="cxcywh").argmax(1).item()
 
             # Normalize so now values represent % to the image
             cx = cx / width
