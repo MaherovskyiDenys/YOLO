@@ -16,8 +16,8 @@ def get_loaders(
     num_workers: int = NUM_WORKERS,
     pin_memory: bool = torch.cuda.is_available(),
 ):
-    train_dataset = VOCDatasetYOLO(base / root, year="2007", image_set="trainval", transforms=train_transform)
-    test_dataset = VOCDatasetYOLO(base / root, year="2007", image_set="test", transforms=val_transform)
+    train_dataset = VOCDatasetYOLO(base / root, image_set="trainval", transforms=train_transform)
+    test_dataset = VOCDatasetYOLO(base / root, image_set="test", transforms=val_transform)
 
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, pin_memory=pin_memory)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=num_workers, pin_memory=pin_memory)
