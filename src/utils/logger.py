@@ -1,7 +1,11 @@
-from torch.utils.tensorboard import SummaryWriter
-from src.schema.epoch import EpochSchema
+from dataclasses import asdict
 from pathlib import Path
-from dataclasses import asdict, dataclass
+
+from torch import Tensor
+from torch.utils.tensorboard import SummaryWriter
+
+from configs.training import TEST_BATCH_SIZE
+from src.schema.epoch import EpochSchema
 
 
 def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_val: EpochSchema, step: int) -> None:
@@ -45,3 +49,6 @@ def log_config(writer: SummaryWriter) -> None:
 
     writer.add_text("Hyperparameters", f"{context}")
 
+def log_images(writer: SummaryWriter, images: Tensor, step):
+    """Images already with bounding boxes labels and scores"""
+    writer.add_images(f'Validation: {TEST_BATCH_SIZE} imgs', images, step)
