@@ -8,14 +8,14 @@ from configs.training import TEST_BATCH_SIZE
 from src.schema.epoch import EpochSchema
 
 
-def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_val: EpochSchema, step: int) -> None:
+def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_test: EpochSchema, step: int) -> None:
     for key in asdict(output_train).keys():
         if key != "mAP":
             writer.add_scalars(
                 f"Loss/{key}",
                 {
                     "train": getattr(output_train, key),
-                    "val": getattr(output_val, key)
+                    "test": getattr(output_test, key)
                 },
                 global_step=step
             )
@@ -30,13 +30,13 @@ def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_val: Epoc
         if key in SKIP_KEYS:
             continue
 
-        val_value = output_val.mAP[key]
+        test_value = output_test.mAP[key]
 
         writer.add_scalars(
             f"mAP/{key}",
             {
                 "train": train_value,
-                "val": val_value,
+                "test": test_value,
             },
             global_step=step
         )
