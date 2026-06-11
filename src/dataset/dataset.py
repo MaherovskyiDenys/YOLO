@@ -8,21 +8,38 @@ from src.utils.anchors import get_anchors
 
 
 class VOCDatasetYOLO(Dataset):
-    def __init__(self, root, year = "2007", image_set = "train", transforms=None):
-        self.voc = VOCDetection(
+    def __init__(self, root, image_set = "trainval", transforms=None):
+        self.voc2007 = VOCDetection(
             root=root,
-            year=year,
+            year="2007",
             image_set=image_set,
             download=False
         )
 
+        self.voc2012 = None
+
+        if image_set != "test":
+            self.voc2012 = VOCDetection(
+                root=root,
+                year="2012",
+                image_set=image_set,
+                download=False
+            )
+
+        # Datasets to parse boxes from
+        datasets = [d for d in [self.voc2007, self.voc2012] if d is not None]
+
+        self.anchors = get_anchors(*datasets)
+
         self.transforms = transforms
-        self.anchors = get_anchors(self.voc)
 
         self.classes = {name: i for i, name in enumerate(CLASSES)}
 
     def __len__(self):
-        return len(self.voc)
+        if self.voc2012 is not None:
+            return len(self.voc2007) + len(self.voc2012)
+
+        return len(self.voc2007)
 
     def encode_target(self, target):
         root = target["annotation"]
@@ -85,7 +102,10 @@ class VOCDatasetYOLO(Dataset):
         return labels
 
     def __getitem__(self, idx):
-        image, target = self.voc[idx]
+        if self.voc2012 is not None and idx >= len(self.voc2007):
+            image, target = self.voc2012[idx - len(self.voc2007)]
+        else:
+            image, target = self.voc2007[idx]
 
         yolo_target = self.encode_target(target)
 
