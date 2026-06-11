@@ -9,6 +9,7 @@ from src.models.model import YOLORes
 from src.training.epoch import run_epoch
 from src.training.loss import YOLOLoss
 from src.training.optimizer import build_optimizer
+from src.utils.anchors import get_anchors
 from src.utils.backbone import freeze_backbone, unfreeze_backbone
 from src.utils.checkpoint import Checkpoint
 from src.utils.logger import log_epoch, log_config, log_images
@@ -20,10 +21,10 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 def train():
     model = YOLORes().to(device)
-    freeze_backbone(model) # Freeze backbone
+    freeze_backbone(model)
 
-    dataset_train, _, dataloader_train, dataloader_test = get_loaders()
-    anchors = dataset_train.anchors.to(device)
+    train_dataset, _, train_dataloader, test_dataloader = get_loaders()
+    anchors = train_dataset.anchors.to(device)
 
     loss_func = YOLOLoss(anchors).to(device)
     optimizer = build_optimizer(model.head, lr=LR, weight_decay=WEIGHT_DECAY)
@@ -39,13 +40,13 @@ def train():
             if epoch == UNFREEZE_BACKBONE_EPOCH:
                 unfreeze_backbone(model, optimizer)
 
-            train_output = run_epoch(model, device, dataloader_train, loss_func, mAP, optimizer)
-            test_output = run_epoch(model, device, dataloader_test, loss_func, mAP)
+            train_output = run_epoch(model, device, train_dataloader, loss_func, mAP, optimizer)
+            test_output = run_epoch(model, device, test_dataloader, loss_func, mAP)
 
             log_epoch(writer, train_output, test_output, epoch)
 
-            if epoch % 2 == 0:
-                images, labels = next(iter(dataloader_test))
+            if epoch % 1 == 0:
+                images, labels = next(iter(test_dataloader))
                 images = images.to(device)
                 labels = labels.to(device)
 
