@@ -19,7 +19,28 @@ def run_epoch(
         dataloader: DataLoader,
         loss_func: YOLOLoss,
         metric: MeanAveragePrecision,
-        optimizer: Optional[Optimizer] = None) -> EpochSchema:
+        optimizer: Optional[Optimizer] = None
+) -> EpochSchema:
+    """
+    Runs a single epoch through the given model
+
+    Automatically sets the model to training mode if an optimizer is provided,
+    otherwise sets it to evaluation mode. Reshapes the raw outputs and targets
+    to match the YOLO anchor grid structure, applies activation functions,
+    computes losses, decodes bounding boxes, updates metrics, and performs
+    backpropagation if training
+
+    Args:
+        model (Module): The PyTorch object detection model
+        device (torch.device): The device (CPU/CUDA) to run the computation on
+        dataloader (DataLoader): DataLoader providing images and targets
+        loss_func (YOLOLoss): Customized YOLO loss function module
+        metric (MeanAveragePrecision): Torchmetrics mAP evaluator
+        optimizer (Optional[Optimizer]): PyTorch optimizer. If None, runs in eval mode
+
+    Returns:
+        EpochSchema: A dataclass containing the mean loss components and final mAP metrics
+    """
     running_loss = RunningLoss()
 
     is_train = optimizer is not None
