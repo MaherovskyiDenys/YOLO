@@ -102,8 +102,8 @@ class YOLOLoss(nn.Module):
 
         cx = (bboxes[..., 0] + gx) / self.S
         cy = (bboxes[..., 1] + gy) / self.S
-        w = bboxes[..., 2]
-        h = bboxes[..., 3]
+        w = torch.clamp(bboxes[..., 2], min=1e-7)
+        h = torch.clamp(bboxes[..., 3], min=1e-7)
         return torch.stack([cx, cy, w, h], dim=-1)
 
     def activate(self, pred):
