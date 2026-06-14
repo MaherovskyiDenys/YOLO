@@ -11,6 +11,7 @@ class RunningLoss:
     batches: int = 0
 
     def update(self, loss_output):
+        """Accumulates scalar loss values from a batch step"""
         self.ciou += loss_output.ciou.item()
         self.obj += loss_output.obj.item()
         self.noobj += loss_output.noobj.item()
@@ -20,6 +21,7 @@ class RunningLoss:
         self.batches += 1
 
     def compute(self):
+        """Calculates and returns the mean loss values across all tracked batches"""
         return {
             "ciou": self.ciou / self.batches,
             "obj": self.obj / self.batches,
@@ -27,3 +29,12 @@ class RunningLoss:
             "cls": self.cls / self.batches,
             "loss": self.loss / self.batches,
         }
+
+    def reset(self):
+        """Resets all metrics back to zero for the next evaluation run"""
+        self.ciou: float = 0.0
+        self.obj: float = 0.0
+        self.noobj: float = 0.0
+        self.cls: float = 0.0
+        self.loss: float = 0.0
+        self.batches: int = 0

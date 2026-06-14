@@ -42,6 +42,7 @@ def run_epoch(
         EpochSchema: A dataclass containing the mean loss components and final mAP metrics
     """
     running_loss = RunningLoss()
+    running_loss.reset()
 
     is_train = optimizer is not None
 
