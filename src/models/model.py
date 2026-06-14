@@ -26,8 +26,11 @@ class YOLORes(nn.Module):
         """
         Forward pass
 
-        :param x: Tensor [B, C, H, W]
-        :return: Tensor permuted to [B, H, W, C]
+        Args:
+            x (Tensor): Shape [B, C, H, W], Input batched tensor with data
+
+        Returns:
+            Tensor: Permuted to Yolo format [B, H, W, C]
         """
         features = self.backbone(x)
         output = self.head(features)
