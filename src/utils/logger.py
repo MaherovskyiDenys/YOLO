@@ -8,7 +8,12 @@ from configs.training import TEST_BATCH_SIZE
 from src.schema.epoch import EpochSchema
 
 
-def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_test: EpochSchema, step: int) -> None:
+def log_epoch(
+        writer: SummaryWriter,
+        output_train: EpochSchema,
+        output_test: EpochSchema,
+        step: int
+) -> None:
     for key in asdict(output_train).keys():
         if key != "mAP":
             writer.add_scalars(
@@ -20,11 +25,12 @@ def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_test: Epo
                 global_step=step
             )
 
+    # Skipping the per-class arrays, some values always produce (-1.)
     SKIP_KEYS = {
         "classes",
         "map_per_class",
         "mar_100_per_class",
-    }  # some values always produce (-1.)
+    }
 
     for key, train_value in output_train.mAP.items():
         if key in SKIP_KEYS:
@@ -35,8 +41,8 @@ def log_epoch(writer: SummaryWriter, output_train: EpochSchema, output_test: Epo
         writer.add_scalars(
             f"mAP/{key}",
             {
-                "train": train_value,
-                "test": test_value,
+                "train": train_value.item(),
+                "test": test_value.item(),
             },
             global_step=step
         )
