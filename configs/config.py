@@ -44,9 +44,8 @@ BBOX_COLORS = [
     "#FF8C00"
 ]
 
-IMG_SIZE = (448, 448)  # (h, w) where h == w
+IMG_SIZE = (448, 448)  # Format: (h, w), where h == w
 
-S = int(IMG_SIZE[0] / 32)  # reduced by factor of 32
-B = 2
+S = int(IMG_SIZE[0] / 32)  # Image is reduced by factor of 32
 ANCHOR_BOXES = 5
 C = len(CLASSES)
