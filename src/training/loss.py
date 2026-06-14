@@ -24,30 +24,31 @@ class YOLOLoss(nn.Module):
 
     def forward(self, predicted, target) -> YOLOLossSchema:
         """
-        Calculates loss for
-            1. CIoU for responsable anchor boxes
+        Calculates loss for:
+            1. CIoU for responsible anchor boxes
             2. Object Confidence Loss
             3. No-object Confidence loss
             4. Classes loss
 
-        :param predicted:
-            Tensor dims [B, S, S, AB, (5 + C)] - Already activated logits
-        :param target:
-            Tensor dims [B, S, S, AB, (5 + C)]
-        :return:
-            Dataclass YOLOLossSchema with losses (ciou, obj, noobj, cls, loss)
+        Args:
+            predicted (Tensor): Activated Shape [B, S, S, AB, 5 + C] (From run_epoch)
+            target (Tensor): Raw Shape [B, S, S, AB, 5 + C]
+
+        Returns:
+            YOLOLossSchema: A dataclass containing the mean loss components
         """
+        # Identify active mask locations
         b_idx, gy, gx, a = target[..., 4].nonzero(as_tuple=True)
 
         # Cell Selection
         responsible_cells_target = target[b_idx, gy, gx, a]
         responsible_cells_predicted = predicted[b_idx, gy, gx, a]
 
-        # 1. CIoU
+        # 1. CIoU Loss
         true_bboxes = responsible_cells_target[..., :4].clone()
         bboxes_predicted = responsible_cells_predicted[..., :4].clone()
 
-        # convert CXCY to global img CXCY
+        # Convert relative cell CXCY to global img CXCY
         true_bboxes = self._convert_boxes(true_bboxes, gy, gx)
         bboxes_predicted = self._convert_boxes(bboxes_predicted, gy, gx)
 
@@ -56,7 +57,9 @@ class YOLOLoss(nn.Module):
         bboxes_xyxy = box_convert(bboxes_predicted, in_fmt="cxcywh", out_fmt="xyxy")
 
         ciou_loss = complete_box_iou_loss(true_xyxy, bboxes_xyxy, reduction="mean")
+
         # 2. Object Confidence Loss
+        # Target confidence should be the IoU score of the predicted bounding box
         iou_targets = self._calculate_iou(bboxes_xyxy.detach(), true_xyxy)
 
         conf_pred = responsible_cells_predicted[..., 4]
@@ -75,7 +78,7 @@ class YOLOLoss(nn.Module):
 
         cls_loss = self.bce(classes_predicted, classes_target)
 
-        # Return
+        # Apply scaling multipliers
         ciou = self.lambda_coord * ciou_loss
         noobject = self.lambda_noobj * noobject_loss
 
@@ -90,16 +93,7 @@ class YOLOLoss(nn.Module):
         return YOLOLossSchema(**losses)
 
     def _convert_boxes(self, bboxes, gy, gx):
-        """
-        Converts bounding boxes' relation to the whole img
-
-        :param bboxes: Tensor dims [N, 4]
-        :param gy: Tensor dims [n]
-        :param gx: Tensor dims [n]
-        :return:
-            Tensor dims [N, 4] - Bounding boxes that are relative to the whole img
-        """
-
+        """Converts local cell bounding boxes to global image coordinates"""
         cx = (bboxes[..., 0] + gx) / self.S
         cy = (bboxes[..., 1] + gy) / self.S
         w = torch.clamp(bboxes[..., 2], min=1e-7)
@@ -107,30 +101,26 @@ class YOLOLoss(nn.Module):
         return torch.stack([cx, cy, w, h], dim=-1)
 
     def activate(self, pred):
-        """
-        Applies activation functions on predicted output
+        """Applies activation functions on predicted output"""
+        output = pred.clone()
+        anchors_wh = self.anchors.view(1, 1, 1, ANCHOR_BOXES, 2)  # Change shape to match multiplication
 
-        :param pred:
-            Tensor dims [B, S, S, AB, 5 + C]
-        :return:
-            Tensor dims [B, S, S, AB, 5 + C] - Activation applied
-        """
-
-        output = torch.zeros_like(pred)
-        anchors_wh = self.anchors.view(1, 1, 1, ANCHOR_BOXES, 2) # change shape to match multiplication
-
+        # Center coordinates: sigmoid maps to cell space [0, 1]
         output[..., 0:2] = torch.sigmoid(pred[..., 0:2])
+        # Dimensions: exponential scaling relative to pre-defined anchor sizes
         output[..., 2:4] = anchors_wh * torch.exp(pred[..., 2:4])
 
+        # Confidence score: sigmoid maps to [0, 1]
         output[..., 4:5] = torch.sigmoid(pred[..., 4:5])
 
+        # Class scores: Kept raw for BCEWithLogitsLoss
         output[..., 5:] = pred[..., 5:]
 
         return output
 
     @staticmethod
     def _calculate_iou(pred_xyxy, true_xyxy):
-
+        """Calculates exact Intersection over Union metrics"""
         inter_xmin = torch.max(pred_xyxy[:, 0], true_xyxy[:, 0])
         inter_ymin = torch.max(pred_xyxy[:, 1], true_xyxy[:, 1])
         inter_xmax = torch.min(pred_xyxy[:, 2], true_xyxy[:, 2])
