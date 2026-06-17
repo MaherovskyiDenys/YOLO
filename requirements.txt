@@ -1,0 +1,7 @@
+torch
+scikit-learn
+torchvision
+matplotlib
+torchmetrics
+fastapi
+pillow
