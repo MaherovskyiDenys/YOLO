@@ -4,4 +4,6 @@ torchvision
 matplotlib
 torchmetrics
 fastapi
+uvicorn
+python-multipart
 pillow
