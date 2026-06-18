@@ -9,9 +9,6 @@
 A custom object detection framework built to understand the inner workings of modern detectors, including anchor boxes, CIoU loss, experiment tracking, evaluation, and deployment.
 
 ---
-## Inference
-
-Will be added...
 
 ## Motivation
 
@@ -41,7 +38,7 @@ The model is inspired by YOLOv1 with several modifications and improvements.
 ### Backbone
 
 * ResNet18 pretrained on ImageNet-1K weights
-* Additional downsampling layer
+* Additional down sampling layer
 * Fully convolutional design
 * Removal of the original fully connected layers
 
@@ -58,7 +55,7 @@ Class probabilities are optimized using:
 ### Input Resolution
 
 * Input size: **448 × 448**
-* Downsampling factor: **32**
+* Down sampling factor: **32**
 * Grid size: **14 × 14**
 
 ### Data Augmentation
@@ -129,13 +126,67 @@ The distribution illustrates the diversity of object scales and aspect ratios pr
 
 ## How to Train the Model
 
-will be added.
+The project uses the Pascal VOC datasets.
+
+To download the datasets, enable downloading inside `src/dataset/dataset.py` by changing:
+
+```python
+download=False
+```
+
+to
+
+```python
+download=True
+```
+
+for both:
+
+- Pascal VOC 2007
+- Pascal VOC 2012
+
+Start training by running:
+
+```bash
+python -m src.training.main
+```
+
+During training:
+
+- TensorBoard logs are written to `runs/`
+- Checkpoints are automatically saved to `models/`
+- The best model is selected based on mAP and stored in the `models/` directory
+- Training can be resumed from saved checkpoints
 
 ---
 
 ## Training Progress
 
 One of the most useful debugging tools during development turned out to be visualization. Inspecting predicted bounding boxes helped identify problems that metrics alone could not reveal.
+
+If you're interested in exploring the complete training history, TensorBoard logs are available for download.
+
+Runs can be downloaded [here](https://drive.google.com/drive/folders/1JSPifxNunoMI6wPXbG5ENFir53Iy1Jra?usp=sharing).
+
+Download the `runs/` directory and launch TensorBoard:
+
+```bash
+tensorboard --logdir runs
+```
+
+Then access at: `http://localhost:6006/`
+
+---
+
+## Results
+
+After training on the combined Pascal VOC 2007 + 2012 datasets, the model achieved the following performance on the VOC 2007 Test set:
+
+| Metric | Value                          |
+| :--- |:-------------------------------|
+| **mAP@0.5** | ~0.50                          |
+| **Backbone** | ResNet18 (Pretrained)          |
+| **Loss Function** | CIoU + BCEWithLogitsLoss + MSE |
 
 ### TensorBoard Monitoring
 
@@ -165,6 +216,32 @@ Examples include:
 Mean Average Precision (mAP) is used as the primary metric for evaluating model performance.
 
 ---
+
+## Inference
+
+Pretrained weights can be downloaded [here](https://drive.google.com/drive/folders/1JSPifxNunoMI6wPXbG5ENFir53Iy1Jra?usp=sharing).
+
+Download the `models/` directory and place it inside the project root.
+
+After that, build and run the Docker container:
+
+```bash
+docker build -t yolores .
+docker run -p 8000:8000 yolores
+```
+
+Once the container is running, open: `http://localhost:8000/docs`
+
+FastAPI will provide an interactive interface where you can access the `/predict` endpoint and upload an image.
+
+The API returns:
+
+* Predicted bounding boxes in (XYXY) format
+* Class labels
+* Confidence scores (0.0-1.0)
+
+---
+
 
 ## Tools and Libraries
 
