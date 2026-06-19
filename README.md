@@ -3,7 +3,7 @@
 > Four months of building and debugging a YOLO-inspired object detector from scratch in PyTorch.
 
 <p align="center">
-  <img src="assets/training_progress.gif" width="850">
+  <img src="assets/results.gif" width="550">
 </p>
 
 A custom object detection framework built to understand the inner workings of modern detectors, including anchor boxes, CIoU loss, experiment tracking, evaluation, and deployment.
@@ -161,6 +161,10 @@ During training:
 ---
 
 ## Training Progress
+
+<p align="center">
+  <img src="assets/training_progress.gif" width="850">
+</p>
 
 One of the most useful debugging tools during development turned out to be visualization. Inspecting predicted bounding boxes helped identify problems that metrics alone could not reveal.
 
